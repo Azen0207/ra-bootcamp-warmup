@@ -1,0 +1,572 @@
+---
+title: "analyze"
+author: "ARAI Zenta"
+date: "2025-08-08"
+output: html_document
+---
+
+```{r set_up, include=F}
+knitr::opts_chunk$set(prompt=F, comment="", message=F, warning = F)
+```
+
+### library設定
+```{r}
+library(tidyverse)
+library(dplyr)
+library(openxlsx)
+library(readxl)
+library(readr)
+```
+
+### 読み込み
+
+- df <- readr::read_rds("data/original/ration_students_truant.rds")
+- 上記を試した際に、以下のように表示された。
+  - Error in readRDS(con, refhook = refhook) : cannot open the connection
+- 原因は、rmdファイルがdocumentの中にあるのに対して、
+  - その中ではない外にあるフォルダを指定しているためではないかと考えた。
+  - geminiに相談し、結果として、以下を作成した。
+
+```{r}
+df <- readr::read_rds("../data/original/ration_students_truant.rds")
+DT::datatable(df)
+```
+
+### 図1
+
+#### 前準備
+
+```{r}
+#万人に変換
+df <- df %>% 
+  mutate(
+    truant_student_man = truant_student / 10000)
+df <- df %>% 
+  group_by(year) %>%
+  #round(digits = 1) %>% 
+  mutate(ratio_100 = sum(truant_student)/sum(students)*100)
+options(digits = 1)
+df$year <- factor(df$year)
+```
+
+- 合計不登校者数の推移、表と棒グラフ（図 1）
+
+```{r}
+df %>% 
+  ggplot()+
+  geom_bar(aes(x = year,
+               y = truant_student_man),
+           stat = "identity")+
+  theme_bw(base_family = "hirakakupron-w3",
+           base_size = 12)+
+  labs(x = "年度", y = "不登校生徒数(万人)")+
+  theme(plot.title = element_text(hjust = 0.5))+
+scale_size_continuous(range = c(1, 10)) +
+  ggtitle("不登校者数の推移")
+```
+
+### 図2
+
+- 不登校割合の推移、折れ線グラフ、各年の上に小数第 2 位で四捨五入した数値を記入
+
+```{r}
+df %>% 
+  ggplot(aes(x = year,
+             y = ratio_100,
+             group= 1)) +
+  geom_point()+
+  geom_line() +
+  labs(x = "年度", y = "不登校割合(%)", 
+       title = "不登校生徒割合の推移") +
+  theme_bw(base_family = "hirakakupron-w3",
+           base_size = 12)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  coord_cartesian(ylim =c(0, 10))+
+  #ggrepel::geom_label_repel(aes(label = ratio)) +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") 
+```
+
+
+
+### 図3
+
+- 合計不登校者数と不登校割合を重ねたグラフ、合計は棒グラフで左軸、推移は折
+れ線グラフで右軸（図 3）
+
+```{r}
+df %>% 
+  ggplot()+
+  geom_bar(aes(x = year,
+               y = truant_student_man),
+           stat = "identity",
+           fill="lightblue")+
+  geom_point(mapping = aes(x = year,
+             y = ratio_100,
+             group= 1))+
+  geom_line(aes(x = year,
+             y = ratio_100,
+             group= 1)) +
+  scale_y_continuous(
+    sec.axis = sec_axis(~. * 10/25, 
+                        name = "不登校割合（%）"), 
+    limits = c(0, 25)) + 
+  theme_bw(base_family = "hirakakupron-w3",
+           base_size = 12)+
+  labs(x = "年度", y = "不登校生徒数(万人)")+
+  theme(plot.title = element_text(hjust = 0.5))+
+scale_size_continuous(range = c(1, 10)) +
+  ggtitle("不登校生徒数/割合の推移")
+```
+
+
+### 図4
+
+#### 前準備
+
+```{r}
+df <- df %>% 
+  mutate(
+    ratio_22 = ratio*100
+  )
+df <- df %>% 
+  filter(year == 2022) %>% 
+  mutate(
+    mean_x = sum(ratio_22)/length(prefecture)
+  )
+```
+
+- 2022 年度のデータに絞って不登校割合のヒストグラム、平均値に破線を引く（図 4）
+
+```{r}
+df %>%
+  filter(year == 2022) %>% 
+  ggplot() +
+  geom_histogram(aes(x = ratio_22),
+                 #bins = 10,
+                 binwidth = 0.5)+ # votehsare のヒストグラム
+  geom_vline(xintercept = df$mean_x, color ="skyblue", size = 0.5, linetype ="dashed") +
+  labs(x = "不登校割合（%）",
+       y = "")+
+  theme_bw(base_family = "hirakakupron-w3",
+           base_size = 12)+
+  theme(plot.title = element_text(hjust = 0.5))+
+scale_size_continuous(range = c(1, 10)) +
+  ggtitle("不登校割合の分布")
+```
+
+### 図5
+
+#### 前準備
+
+```{r}
+df <- df %>% 
+  mutate(pre = if_else(prefecture == "東京", 1, 0))
+names(df)
+df <- df %>% 
+  filter(year == 2022)
+palette2 = rep('grey', times = 47)
+palette2_named = setNames(object = palette2, nm = df$prefecture)
+palette2_named['神奈川'] = 'pink'
+print(palette2_named)
+```
+
+- 2022 年度の不登校率が高い順に都道府県を並べて縦棒グラフ、皆さんが実際に行ったことがある都道府県から**一番楽しかった場所**を 1 つ選んでピンクに、それ以外をグレーで配色（図 5）
+
+```{r}
+df %>%
+  ggplot() +
+  geom_bar(aes(x = ratio_22, 
+               y = prefecture), 
+           stat = "identity") + 
+  geom_col(aes(x = ratio_22, y = prefecture,
+               fill = prefecture)) +
+  scale_fill_manual(values = palette2_named)+
+  labs(x = "不登校割合(%)", y = "都道府県") + # ラベル修正
+  scale_size_continuous(range = c(0, 10)) +
+  ggtitle("都道府県別不登校割合（2022年度）") +
+  theme_minimal() + # テーマを変えてみよう
+  theme_bw(base_family = "HiraKakuProN-W3") 
+```
+
+### 任意課題
+
+- 以上の分析から、不登校生徒数・割合が増加していることが確認できました。では、この背景にはどのような理由があるのでしょうか？皆さんのご意見を Rmd ファイルに追記してください。なおこの設問は任意であり、明確な正解もありません。
+
+```{r}
+library(geofacet)
+library(ggrepel)
+library(rmapshaper)
+library(rnaturalearth)
+library(sf)
+library(tidyverse)
+library(zipangu)
+```
+
+```{r}
+df_jpn_tru <- read.csv("../data/original/ration_students_truant_map.csv")
+df_jpn_map <- ne_states("Japan", 
+                       returnclass = "sf")
+unique(df_jpn_tru$name)
+unique(df_jpn_map$name)
+setdiff(df_jpn_map$name, df_jpn_tru$name)
+df_jpn_map <- df_jpn_map |> 
+  mutate(name = str_replace_all(name,
+    c("Ōita"      = "Ouita",  # "Ōita" を "Oita" に変換
+      "Hyōgo"     = "Hyogo", 
+      "Kyōto"     = "Kyoto",
+      "Ōsaka"     = "Osaka",
+      "Hokkaidō"  = "Hokkaido",
+      "Kōchi"     = "Kochi")
+    ))
+```
+
+```{r}
+df_jpn <- left_join(df_jpn_tru, df_jpn_map,
+                    by = "name") %>% 
+  st_as_sf()
+DT::datatable(df_jpn)
+```
+
+```{r}
+plt_1 <- df_jpn|>
+  ggplot() +
+  aes(year, ratio) +
+  geom_line() +
+  theme_gray(base_size = 6, 
+             base_family = "HiraKakuProN-W3",
+             ) +
+  facet_geo(~ name,
+          grid = "jp_prefs_grid1",
+          scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 80, # 40度回転
+                                   vjust = 1,
+                                   hjust = 1)) +
+  ggtitle("図1.不登校割合の都道府県別推移(2013-2022)") +
+  labs(x = "年度",
+       y = "不登校割合（%）")+
+  theme(plot.title = element_text(size = 15)) 
+
+plt_1
+
+```
+
+- 上図の都道府県別推移で確認すると、いずれの都道府県も上昇傾向にあることが確認できた。
+- また、いずれもほとんど同じような形状をしている。
+
+```{r}
+df_jpn_cha <- read.csv("../data/original/ration_tstudents_change.csv")
+df_jpn_map <- ne_states("Japan", 
+                       returnclass = "sf")
+unique(df_jpn_cha$name)
+unique(df_jpn_map$name)
+setdiff(df_jpn_map$name, df_jpn_cha$name)
+df_jpn_map <- df_jpn_map |> 
+  mutate(name = str_replace_all(name,
+    c("Ōita"      = "Ouita",  # "Ōita" を "Oita" に変換
+      "Hyōgo"     = "Hyogo", 
+      "Kyōto"     = "Kyoto",
+      "Ōsaka"     = "Osaka",
+      "Hokkaidō"  = "Hokkaido",
+      "Kōchi"     = "Kochi")
+    ))
+
+df_jpn_c <- left_join(df_jpn_cha, df_jpn_map,
+                    by = "name") %>% 
+  st_as_sf()
+DT::datatable(df_jpn_c)
+```
+
+
+
+```{r}
+# 人口増減・都道府県別日本地図 (2016-2021)
+df_jpn_c %>%
+    ggplot() +
+    geom_sf(aes(fill = change_1322)) +
+  scale_fill_distiller(name = "不登校増減(%)",
+                       palette = "OrRd", # 任意の色を指定
+                       direction = 1) + 
+    labs(fill = "不登校増減(%)") +
+   theme_void(base_family = "HiraginoSans-W3", base_size = 9) +
+  ggtitle("図2.都道府県別　不登校の増減（2013年〜2022年）") +
+  theme(plot.title = element_text(size = 15)) 
+```
+
+- だが、都道府県ごとに見ると、この十年間において増減は大きく異なる。
+- そして関東圏や関西圏といった都市圏において顕著な増加をしているわけでないことが確認できる。
+
+- この背景にはどのような理由
+
+- 以上より、日本国内全体の傾向のみならず、都道府県・そして経済的規模に関わらず不登校の割合は増加していることが確認できた。
+- そのため背景から、地理的結びつきや経済的紐帯は取り除かれる。
+  - もっとも仮設検定をしていないためこれらは示唆にとどまる
+- しかし図1.より、上昇傾向は見られるものの2020年からのコロナ禍を機に急増していることが確認できる。
+
+- そのため、コロナ禍以前から不登校の傾向は確認できていたものの、都道府県ごとのコロナ禍への対応の差異などから、不登校割合が大きく異なったのではないかと推測する。
+  - 実際に、以下の図3.と図4を比較すると、コロナ禍においての不登校の割合の増減は都道府県別で見ても顕著に大きくなっていることが確認できる。
+  - 結論として、当該期間における不登校の増減は、コロナ禍以前とコロナ禍でそれぞれ社会的要因が異なるのではないかと考えられる。そして、コロナ禍における不登校の増加は、顕著に大きなものであるため、その期間においてその社会がどのような対処をしたのかによって、不登校割合が飛躍的に増加したことを説明できるのではないかと考えた。
+  
+```{r}
+# 人口増減・都道府県別日本地図 (2016-2021)
+df_jpn_c %>%
+    ggplot() +
+    geom_sf(aes(fill = change_1319)) +
+  scale_fill_distiller(name = "不登校増減(%)",
+                       palette = "OrRd", # 任意の色を指定
+                       direction = 1) + 
+    labs(fill = "不登校増減(%)") +
+   theme_void(base_family = "HiraginoSans-W3", base_size = 9) +
+  ggtitle("図3.都道府県別　不登校の増減（2013年〜2019年）") +
+  theme(plot.title = element_text(size = 15)) 
+```
+
+```{r}
+# 人口増減・都道府県別日本地図 (2016-2021)
+df_jpn_c %>%
+    ggplot() +
+    geom_sf(aes(fill = change_1922)) +
+  scale_fill_distiller(name = "不登校増減(%)",
+                       palette = "OrRd", # 任意の色を指定
+                       direction = 1) + 
+    labs(fill = "不登校増減(%)") +
+   theme_void(base_family = "HiraginoSans-W3", base_size = 9) +
+  ggtitle("図4.都道府県別　不登校の増減（2019年〜2022年）") +
+  theme(plot.title = element_text(size = 15)) 
+```
+
+##### 参考
+
+```{r}
+df_jpn %>%
+  filter(year == 2013) %>% 
+    ggplot() +
+    geom_sf(aes(fill = ratio)) +
+  scale_fill_distiller(name = "不登校割合(%)",
+                       palette = "Blues", # 任意の色を指定
+                       direction = 1) + 
+    labs(fill = "不登校割合(%)") +
+   theme_void(base_family = "HiraginoSans-W3", base_size = 9) +
+  ggtitle("都道府県別の不登校割合（2013年度）") +
+  theme(plot.title = element_text(size = 15)) 
+```
+
+```{r}
+df_jpn %>%
+  filter(year == 2022) %>% 
+    ggplot() +
+    geom_sf(aes(fill = ratio)) +
+  scale_fill_distiller(name = "不登校割合(%)",
+                       palette = "Blues", # 任意の色を指定
+                       direction = 1) + 
+    labs(fill = "不登校割合(%)") +
+   theme_void(base_family = "HiraginoSans-W3", base_size = 9) +
+  ggtitle("都道府県別の不登校割合（2022年度）") +
+  theme(plot.title = element_text(size = 15)) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
